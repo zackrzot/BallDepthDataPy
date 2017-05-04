@@ -2,6 +2,7 @@ import os
 import numpy
 from PIL import Image, ImageDraw
 import cv2
+import math
 
 fullDatPath = "full/dat/"
 sampleDatPath = "sample/dat/"
@@ -45,9 +46,10 @@ def getArrayFromFile(filePathAndName):
 
 
 def getShade(minVal, maxVal, val):
-    if(minVal<0):
-        minVal = 0
-    x = 255-(int)((val/(maxVal-minVal))*255)
+    a = maxVal - minVal
+    b = val - minVal
+    c = b / a
+    x = (int) (255-(math.ceil(c*255)))
     return x
 
 def getImage(arr):
@@ -62,13 +64,6 @@ def getImage(arr):
             s = getShade(minVal,maxVal,arr[row,col])
             pmap[col,row] = (s,s,s)
     return img
-
-def rebase(arr):
-    minVal = arr.min()
-    for row in range(arr.shape[0]):
-        for col in range(arr.shape[1]):
-            arr[row,col] = arr[row,col] - minVal
-    return arr
 
 def templateMatch(image):
     open_cv_image = numpy.array(image) 
@@ -93,23 +88,20 @@ def genImages(datPath, imgPath):
         img = getImage(arr)
         img.save(imgPath + filename.replace(".txt", ".png"))
 # =============================================================== #
-def matchTempate(datFile, sampleFile):
+def matchTempate(datFile):
     print "Full Data"
     arrFull = getArrayFromFile(fullDatPath+datFile)
-    print "Sample Data"
-    arrSample = getArrayFromFile(sampleDatPath+sampleFile)
 
     originX = 0
     originY = 0
-    sampleW = arrSample.shape[0]
-    sampleH = arrSample.shape[1]
+    sampleW = 24
+    sampleH = 24
     maxSearchX = arrFull.shape[0]-sampleW
     maxSearchY = arrFull.shape[1]-sampleH
 
     count = 0
-
     maxconf = 0
-    thresh = .6
+    thresh = .98
     threshCount = 0
     slide = 3
 
@@ -121,11 +113,9 @@ def matchTempate(datFile, sampleFile):
         while originY <= maxSearchY:
             # get sample of same size from full image
             arrSub = arrFull[originX:originX+sampleW, originY:originY+sampleH]
-            # rebase to 0
-            #arrSub = rebase(arrSub)
             # 
             img = getImage(arrSub)
-            #img.save("result/" + str(count)+ ".png")
+            img.save("slide/" + str(count)+ ".png")
             conf = templateMatch(img)
 
             if conf > maxconf:
@@ -151,7 +141,7 @@ def matchTempate(datFile, sampleFile):
     for point in points:
         draw = ImageDraw.Draw(img)
         try:
-            draw.rectangle(((point[1],point[0]), (point[1]+sampleW, point[0]+sampleH)), fill="black")
+            draw.rectangle(((point[1],point[0]), (point[1]+sampleW, point[0]+sampleH)))
         except:
             pass
 
@@ -166,6 +156,5 @@ def matchTempate(datFile, sampleFile):
 #genImages(sampleDatPath, sampleImgPath)
 
 datFile = "13b565f3-0062-4840-b75f-87a62423ca76_FULL.txt"
-sampleFile = "9ff3e1f8-aa4a-40bc-857b-640e54c5d982.txt"
-matchTempate(datFile,sampleFile)
+matchTempate(datFile)
 
