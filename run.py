@@ -1,6 +1,6 @@
 import os
 import numpy
-from PIL import Image
+from PIL import Image, ImageDraw
 import cv2
 
 fullDatPath = "full/dat/"
@@ -61,7 +61,6 @@ def getImage(arr):
         for col in range(arr.shape[1]):
             s = getShade(minVal,maxVal,arr[row,col])
             pmap[col,row] = (s,s,s)
-
     return img
 
 def rebase(arr):
@@ -110,11 +109,9 @@ def matchTempate(datFile, sampleFile):
     count = 0
 
     maxconf = 0
-    minconf = 9999
-    thresh = .80
+    thresh = .6
     threshCount = 0
-    slide = 5
-
+    slide = 3
 
     points = []
 
@@ -133,11 +130,10 @@ def matchTempate(datFile, sampleFile):
 
             if conf > maxconf:
                 maxconf = conf
-            if conf < minconf:
-                minconf = conf
             if conf > thresh:
                 threshCount+=1
                 img.save("result/" + str(count)+ ".png")
+                points.append((originX,originY))
 
 
             originY+=slide
@@ -149,8 +145,17 @@ def matchTempate(datFile, sampleFile):
 
     print "searches conducted = " + str(count)
     print "maxconf = " + str(maxconf)
-    print "minconf = " + str(minconf)
     print "threshCount = " + str(threshCount)
+
+    img = getImage(arrFull)
+    for point in points:
+        draw = ImageDraw.Draw(img)
+        try:
+            draw.rectangle(((point[1],point[0]), (point[1]+sampleW, point[0]+sampleH)), fill="black")
+        except:
+            pass
+
+    img.save("map/" + datFile.replace(".txt", ".png"))
 
 
 
@@ -160,7 +165,7 @@ def matchTempate(datFile, sampleFile):
 #genImages(fullDatPath, fullImgPath)
 #genImages(sampleDatPath, sampleImgPath)
 
-datFile = "13b565f3-0062-4840-b75f-87a62423ca76.txt_FULL.txt"
+datFile = "13b565f3-0062-4840-b75f-87a62423ca76_FULL.txt"
 sampleFile = "9ff3e1f8-aa4a-40bc-857b-640e54c5d982.txt"
 matchTempate(datFile,sampleFile)
 
