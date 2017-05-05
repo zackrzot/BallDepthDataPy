@@ -3,6 +3,8 @@ import numpy
 from PIL import Image, ImageDraw
 import cv2
 import math
+import matplotlib.pyplot as plt
+import datetime
 
 fullDatPath = "full/dat/"
 sampleDatPath = "sample/dat/"
@@ -10,10 +12,14 @@ fullImgPath = "full/img/"
 sampleImgPath = "sample/img/"
 ballPath = "ball/"
 
+maxDepth = 3100
+minDepth = 1500
+threshold = .9999
+
 # takes into account the extra tab and new line in data files
 def getDim(text):
     return ((len(text.split('\n'))-1), (len(text.split('\n')[0].split('\t'))-1))
-
+# =============================================================== #
 def getArrayFromText(text, m, n):
     arr = numpy.zeros((m,n))
     r = 0
@@ -25,11 +31,18 @@ def getArrayFromText(text, m, n):
             col = col.strip()
             if(col == ""):
                 break
+            col = int(col)
+            if col == 0:
+                col = maxDepth
+            if col > maxDepth:
+                col = maxDepth
+            if col < minDepth:
+                col = minDepth
             arr[r, c] = col
             c+=1
         r+=1
     return arr
-
+# =============================================================== #
 def getArrayFromFile(filePathAndName):
     # load raw string data
     text = ""
@@ -37,26 +50,23 @@ def getArrayFromFile(filePathAndName):
         text = f.read()
     # get width and height from string data
     m, n = getDim(text)
-    print "rows (m) = " + str(m)
-    print "cols (n) = " + str(n)
+    #print "rows (m) = " + str(m)
+    #print "cols (n) = " + str(n)
     # parse text data and generate array
     arr = getArrayFromText(text, m, n)
-    print arr
+    #print arr
     return arr
-
-
+# =============================================================== #
 def getShade(minVal, maxVal, val):
     a = maxVal - minVal
     b = val - minVal
     c = b / a
     x = (int) (255-(math.ceil(c*255)))
     return x
-
+# =============================================================== #
 def getImage(arr):
     minVal = arr.min()
     maxVal = arr.max()
-    #print "min: " + str(minVal)
-    #print "max: " + str(maxVal)
     img = Image.new('RGB', (arr.shape[1], arr.shape[0]), "black")
     pmap = img.load()
     for row in range(arr.shape[0]):
@@ -64,21 +74,24 @@ def getImage(arr):
             s = getShade(minVal,maxVal,arr[row,col])
             pmap[col,row] = (s,s,s)
     return img
+# =============================================================== #
+def templateMatch(fullImage, templateFile):
+    # Template File
+    #print templateFile
+    template = cv2.imread(templateFile, 1)
+    template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+    res = cv2.matchTemplate(fullImage, template, cv2.TM_CCORR_NORMED)
 
-def templateMatch(image):
-    open_cv_image = numpy.array(image) 
-    open_cv_image = open_cv_image[:, :, ::-1].copy() 
-    open_cv_image = cv2.cvtColor(open_cv_image, cv2.COLOR_BGR2GRAY)
-    highest = 0
-    for file in os.listdir(ballPath):
-        img2 = cv2.imread(ballPath+file, 1)
-        img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
-        res = cv2.matchTemplate(img2, open_cv_image, cv2.TM_CCORR_NORMED)
-        maxConf = numpy.max(res)
-        if maxConf > highest:
-            highest = maxConf
-    return highest
+    w, h = template.shape[::-1]
+    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+    top_left = min_loc
+    bottom_right = (top_left[0] + w, top_left[1] + h)
 
+    loc = numpy.where( res >= threshold)
+    for pt in zip(*loc[::-1]):
+        cv2.rectangle(fullImage, pt, (pt[0] + w, pt[1] + h), (0,0,255), 1)
+
+    return fullImage
 
 # =============================================================== #
 def genImages(datPath, imgPath):
@@ -88,73 +101,40 @@ def genImages(datPath, imgPath):
         img = getImage(arr)
         img.save(imgPath + filename.replace(".txt", ".png"))
 # =============================================================== #
-def matchTempate(datFile):
-    print "Full Data"
+def getGradient(datFile):
     arrFull = getArrayFromFile(fullDatPath+datFile)
-
-    originX = 0
-    originY = 0
-    sampleW = 24
-    sampleH = 24
-    maxSearchX = arrFull.shape[0]-sampleW
-    maxSearchY = arrFull.shape[1]-sampleH
-
-    count = 0
-    maxconf = 0
-    thresh = .98
-    threshCount = 0
-    slide = 3
-
-    points = []
-
-    while originX <= maxSearchX:
-        print str(originX)+"/"+str(maxSearchX)
-        originY = 0
-        while originY <= maxSearchY:
-            # get sample of same size from full image
-            arrSub = arrFull[originX:originX+sampleW, originY:originY+sampleH]
-            # 
-            img = getImage(arrSub)
-            img.save("slide/" + str(count)+ ".png")
-            conf = templateMatch(img)
-
-            if conf > maxconf:
-                maxconf = conf
-            if conf > thresh:
-                threshCount+=1
-                img.save("result/" + str(count)+ ".png")
-                points.append((originX,originY))
-
-
-            originY+=slide
-            count+=1
-        originX+=slide
-
-    #img = getImage(arrFull)
-    #img.save("result/" + datFile.replace(".txt", ".png"))
-
-    print "searches conducted = " + str(count)
-    print "maxconf = " + str(maxconf)
-    print "threshCount = " + str(threshCount)
-
     img = getImage(arrFull)
-    for point in points:
-        draw = ImageDraw.Draw(img)
-        try:
-            draw.rectangle(((point[1],point[0]), (point[1]+sampleW, point[0]+sampleH)))
-        except:
-            pass
-
-    img.save("map/" + datFile.replace(".txt", ".png"))
-
-
+    return img
+# =============================================================== #
+def findBalls(img, ballPath):
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    for filename in os.listdir(ballPath):
+        img = templateMatch(img, ballPath+filename)
+    return img
 
 # =============================================================== #
 
 
 #genImages(fullDatPath, fullImgPath)
-#genImages(sampleDatPath, sampleImgPath)
+
+a = datetime.datetime.now()
 
 datFile = "13b565f3-0062-4840-b75f-87a62423ca76_FULL.txt"
-matchTempate(datFile)
+#datFile = "509e4984-7917-4722-8503-220efc0669bc_FULL.txt"
+datFile = "b0aa273e-716a-46c6-bb48-5b038965a132_FULL.txt"
+datFile = "de9ec5aa-6b6e-4941-ad7e-b8efcc94464e_FULL.txt"
+
+img = getGradient(datFile)
+
+# format image
+img = numpy.array(img) 
+img = img[:, :, ::-1].copy() 
+
+img = findBalls(img, ballPath)
+
+b = datetime.datetime.now()
+
+print "Calculation time: " + str(b-a)
+
+cv2.imwrite("result/img.png", img)
 
